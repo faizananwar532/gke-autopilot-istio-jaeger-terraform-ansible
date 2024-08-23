@@ -1,0 +1,51 @@
+---
+- name: Install Istio on GKE cluster
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../ansible.vars.yml
+    
+  collections:
+    - kubernetes.core
+
+  tasks:
+    - name: Authenticate with GCP
+      command: gcloud auth activate-service-account --key-file {{ credential }}
+      register: gcloud_auth
+      failed_when: "'Error:' in gcloud_auth.stderr"
+
+    - name: Set the GCP project
+      command: gcloud config set core/project {{ project_id }}
+      register: gcloud_project
+      failed_when: "'Error:' in gcloud_project.stderr"
+
+    - name: Get GKE cluster credentials
+      command: gcloud container clusters get-credentials {{ cluster_name }} --region {{ region_name }} --project {{ project_id }}
+      register: gcloud_creds
+      failed_when: "'Error:' in gcloud_creds.stderr"
+
+    - name: Set kube context to your cluster
+      command: kubectl config use-context gke_{{ project_id }}_{{ region_name }}_{{ cluster_name }}
+      register: kube_context
+      failed_when: "'Error:' in kube_context.stderr"
+
+    - name: Add Istio Helm chart repository
+      kubernetes.core.helm_repository:
+        name: istio
+        repo_url: "https://istio-release.storage.googleapis.com/charts"
+
+    - name: Update Helm repositories
+      kubernetes.core.helm_repository:
+        name: istio
+        update_cache: yes
+
+    - name: Install Istio using Helm
+      kubernetes.core.helm:
+        name: istiod
+        chart_ref: istio/istiod
+        release_namespace: istiod
+        namespace: istio-system
+        create_namespace: true
+        ca_cert: 
+        kubeconfig: "{{ playbook_dir }}/kubeconfig"
+        values: {}

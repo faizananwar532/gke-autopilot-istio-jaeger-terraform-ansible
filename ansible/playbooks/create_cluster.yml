@@ -1,0 +1,52 @@
+---
+- name: Provision Autopilot GKE cluster with Terraform
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../ansible.vars.yml
+
+  tasks:
+    - name: Ensure Terraform is installed
+      package:
+        name: terraform
+        state: present
+      become: true
+
+    - name: Initialize Terraform
+      command: terraform init
+      args:
+        chdir: terraform
+      register: terraform_init
+      failed_when: "'Error:' in terraform_init.stderr"
+
+    - name: Create GKE Autopilot Cluster
+      command: terraform apply -auto-approve
+      args:
+        chdir: terraform
+        creates: terraform.tfstate
+        stdin_add_newline: true
+      environment:
+        TF_VAR_project_id: "{{ project_id }}"
+        TF_VAR_credential: "{{ credential }}"
+        TF_VAR_region_name: "{{ region_name }}"
+        TF_VAR_cluster_name: "{{ cluster_name }}"
+        TF_VAR_autopilot: "{{ autopilot }}"
+      register: terraform_apply
+      failed_when: "'Error:' in terraform_apply.stderr"
+
+    - name: Output kubeconfig for further tasks
+      command: terraform output -raw kubeconfig
+      args:
+        chdir: terraform
+      register: terraform_kubeconfig
+      failed_when: "'Error:' in terraform_kubeconfig.stderr"
+
+    - name: Store kubeconfig content in a file
+      copy:
+        content: "{{ terraform_kubeconfig.stdout }}"
+        dest: "{{ playbook_dir }}/kubeconfig"
+        mode: '0600'
+
+    - name: Set KUBECONFIG environment variable
+      set_fact:
+        KUBECONFIG: "{{ playbook_dir }}/kubeconfig"

@@ -1,0 +1,61 @@
+---
+- name: Install Jaeger on GKE cluster
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../ansible.vars.yml
+    
+  collections:
+    - kubernetes.core
+
+  tasks:
+    - name: Authenticate with GCP
+      command: gcloud auth activate-service-account --key-file {{ credential }}
+      register: gcloud_auth
+      failed_when: "'Error:' in gcloud_auth.stderr"
+
+    - name: Set the GCP project
+      command: gcloud config set core/project {{ project_id }}
+      register: gcloud_project
+      failed_when: "'Error:' in gcloud_project.stderr"
+
+    - name: Get GKE cluster credentials
+      command: gcloud container clusters get-credentials {{ cluster_name }} --region {{ region_name }} --project {{ project_id }}
+      register: gcloud_creds
+      failed_when: "'Error:' in gcloud_creds.stderr"
+
+    - name: Set kube context to your cluster
+      command: kubectl config use-context gke_{{ project_id }}_{{ region_name }}_{{ cluster_name }}
+      register: kube_context
+      failed_when: "'Error:' in kube_context.stderr"
+
+    - name: Add Jaeger Helm chart repository
+      kubernetes.core.helm_repository:
+        name: jaegertracing
+        repo_url: "https://jaegertracing.github.io/helm-charts"
+
+    - name: Update Helm repositories
+      kubernetes.core.helm_repository:
+        name: jaegertracing
+        update_cache: yes
+
+    - name: Deploy Jaeger using Helm
+      kubernetes.core.helm:
+        name: jaeger
+        chart_ref: jaegertracing/jaeger
+        release_namespace: jaeger
+        namespace: jaeg
+        create_namespace: true
+        values_files:
+          - ../jaeger.values.yml
+
+    - name: Verify Jaeger Deployment
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: jaeg
+      register: jaeger_pods
+
+    - name: Display Jaeger Pod Status
+      debug:
+        msg: "{{ jaeger_pods.resources | map(attribute='status.phase') | list }}"

@@ -1,0 +1,5 @@
+project_id: <GCP project id>
+credential: <json filename path here>
+region_name: <GCP region>
+cluster_name: <GKE Cluster name>
+autopilot: "true"

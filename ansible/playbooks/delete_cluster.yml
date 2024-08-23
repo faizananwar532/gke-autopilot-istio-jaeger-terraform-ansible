@@ -1,0 +1,66 @@
+---
+- name: Delete GKE Cluster, Istio, and Jaeger
+  hosts: localhost
+  gather_facts: false
+
+  vars_files:
+    - ansible.vars.yml
+
+  collections:
+    - kubernetes.core
+
+  tasks:
+    - name: Authenticate with GCP
+      command: gcloud auth activate-service-account --key-file {{ credential }}
+      register: gcloud_auth
+      failed_when: "'Error:' in gcloud_auth.stderr"
+
+    - name: Set the GCP project
+      command: gcloud config set core/project {{ project_id }}
+      register: gcloud_project
+      failed_when: "'Error:' in gcloud_project.stderr"
+
+    - name: Get GKE cluster credentials
+      command: gcloud container clusters get-credentials {{ cluster_name }} --region {{ region_name }} --project {{ project_id }}
+      register: gcloud_creds
+      failed_when: "'Error:' in gcloud_creds.stderr"
+      when: cluster_exists.stdout != ""
+
+    - name: Delete Jaeger Helm release
+      kubernetes.core.helm:
+        name: jaeger
+        namespace: jaeg
+        state: absent
+        kubeconfig: "{{ playbook_dir }}/kubeconfig"
+      ignore_errors: true  # In case the release does not exist
+
+    - name: Delete Istio Helm release
+      kubernetes.core.helm:
+        name: istiod
+        namespace: istio-system
+        state: absent
+        kubeconfig: "{{ playbook_dir }}/kubeconfig"
+      ignore_errors: true  # In case the release does not exist
+
+    - name: Destroy Terraform-managed GKE cluster
+      command: terraform destroy -auto-approve
+      args:
+        chdir: terraform
+      register: terraform_destroy
+      failed_when: "'Error:' in terraform_destroy.stderr"
+
+    - name: Clean up kubeconfig file
+      file:
+        path: "{{ playbook_dir }}/kubeconfig"
+        state: absent
+      when: terraform_destroy.changed
+
+    - name: Verify Cluster Deletion
+      shell: gcloud container clusters describe {{ cluster_name }} --region {{ region_name }} --project {{ project_id }}
+      register: cluster_exists
+      ignore_errors: true  # Cluster should not exist after deletion
+
+    - name: Output Cluster Deletion Status
+      debug:
+        msg: "Cluster {{ cluster_name }} deletion confirmed."
+      when: cluster_exists.stdout == ""
