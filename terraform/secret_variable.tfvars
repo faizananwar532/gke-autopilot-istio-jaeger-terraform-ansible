@@ -1,0 +1,5 @@
+project_id          = "your-gcp-project-id"
+region_name         = "your-preferred-region"
+cluster_name        = "your-cluster-name"
+credential          = "json file name"
+backend_bucket_name = "your gcp bucket name"
